@@ -6,16 +6,30 @@
     <title>Random Landing Page</title>
     <link rel="stylesheet" href="style.css" />
   </head>
-  <body>
+  <body data-api-base="http://localhost:4000">
     <main class="hero" id="hero">
       <div class="content">
-        <h1>Gedanke</h1>  
-        <input
-          id="user-text"
-          type="text"
-          name="user-text"
-          placeholder="Start typing..."
-        />
+        <h1>Gedanke</h1>
+        <form id="thought-form" class="thought-form">
+          <input
+            id="user-text"
+            type="text"
+            name="user-text"
+            placeholder="Schreib einen Gedanken…"
+            maxlength="280"
+            autocomplete="off"
+            required
+          />
+          <button type="submit">Speichern</button>
+        </form>
+        <p
+          class="status-message"
+          id="status-message"
+          role="status"
+          aria-live="polite"
+          data-state="idle"
+        ></p>
+        <ul id="thought-list" aria-live="polite"></ul>
       </div>
     </main>
     <script>
@@ -30,6 +44,121 @@
       const pickRandom = () =>
         images[Math.floor(Math.random() * images.length)];
       hero.style.setProperty("--hero-image", `url('${pickRandom()}')`);
+
+      const API_BASE_URL =
+        document.body.dataset.apiBase || "http://localhost:4000";
+
+      const setupThoughts = () => {
+        const form = document.getElementById("thought-form");
+        const input = document.getElementById("user-text");
+        const statusMessage = document.getElementById("status-message");
+        const list = document.getElementById("thought-list");
+
+        if (!form || !input || !statusMessage || !list) {
+          return;
+        }
+
+        const submitButton = form.querySelector("button[type='submit']");
+
+        const setStatus = (message = "", type = "info") => {
+          statusMessage.textContent = message;
+          statusMessage.dataset.state = message ? type : "idle";
+        };
+
+        const renderThoughts = (thoughts = []) => {
+          list.innerHTML = "";
+
+          if (!thoughts.length) {
+            const emptyState = document.createElement("li");
+            emptyState.className = "thought-empty";
+            emptyState.textContent = "Noch keine Gedanken gespeichert.";
+            list.appendChild(emptyState);
+            return;
+          }
+
+          thoughts.forEach((thought) => {
+            const item = document.createElement("li");
+            const text = document.createElement("span");
+            text.textContent = thought.text;
+
+            const time = document.createElement("time");
+            const timestamp = thought.createdAt
+              ? new Date(thought.createdAt)
+              : new Date();
+            time.dateTime = timestamp.toISOString();
+            time.textContent = timestamp.toLocaleString();
+
+            item.appendChild(text);
+            item.appendChild(time);
+            list.appendChild(item);
+          });
+        };
+
+        const fetchThoughts = async () => {
+          try {
+            const response = await fetch(`${API_BASE_URL}/thoughts`);
+
+            if (!response.ok) {
+              throw new Error("Konnte Gedanken nicht laden.");
+            }
+
+            const data = await response.json();
+            renderThoughts(data);
+          } catch (error) {
+            console.error(error);
+            setStatus(
+              "Konnte Gedanken nicht laden. Läuft der Server?",
+              "error"
+            );
+          }
+        };
+
+        const saveThought = async (text) => {
+          const response = await fetch(`${API_BASE_URL}/thoughts`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ text })
+          });
+
+          if (!response.ok) {
+            const payload = await response.json().catch(() => ({}));
+            throw new Error(payload.error || "Fehler beim Speichern.");
+          }
+
+          return response.json();
+        };
+
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const value = input.value.trim();
+
+          if (!value) {
+            setStatus("Bitte gib einen Gedanken ein.", "error");
+            return;
+          }
+
+          submitButton.disabled = true;
+          setStatus("Speichere…");
+
+          try {
+            await saveThought(value.slice(0, 280));
+            input.value = "";
+            setStatus("Gespeichert!", "success");
+            await fetchThoughts();
+          } catch (error) {
+            setStatus(error.message, "error");
+          } finally {
+            submitButton.disabled = false;
+            setTimeout(() => setStatus(""), 2500);
+          }
+        });
+
+        fetchThoughts();
+      };
+
+      setupThoughts();
     </script>
   </body>
 </html>
